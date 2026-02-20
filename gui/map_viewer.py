@@ -5,14 +5,14 @@ from PySide6.QtCore import Qt, QRectF, Signal, QObject, QTimer
 from PySide6.QtGui import QPixmap, QColor, QPen, QBrush, QPainter, QFont
 
 class ClickableScene(QGraphicsScene):
-    point_clicked = Signal(int)
+    point_clicked = Signal(str)
 
 class MapPoint(QGraphicsEllipseItem):
     def __init__(self, x, y, number, description="", parent=None):
         self.radius = 18 
         super().__init__(-self.radius, -self.radius, self.radius*2, self.radius*2)
         self.setPos(x, y)
-        self.number = number
+        self.number = str(number)
         self.description = description
         self.setAcceptHoverEvents(True)
         
@@ -56,10 +56,16 @@ class MapPoint(QGraphicsEllipseItem):
             self.setBrush(self.calib_brush)
             self.setPen(self.pen_calib)
             self.label.setDefaultTextColor(Qt.white)
+            text = f"POSIZIONE {self.number}"
+            if self.description:
+                text += f"\n{self.description}"
+            text += "\n(Doppio clic per eliminare)"
+            self.setToolTip(text)
         else:
             self.setBrush(self.idle_brush)
             self.setPen(self.pen_idle)
             self.label.setDefaultTextColor(Qt.black)
+            self.update_tooltip()
 
     def hoverEnterEvent(self, event):
         if not self.flags() & QGraphicsItem.ItemIsMovable:
@@ -87,8 +93,21 @@ class MapPoint(QGraphicsEllipseItem):
         # Permette di emettere il ricalcolo coordinate se spostato
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+        if (self.flags() & QGraphicsItem.ItemIsMovable) and event.button() == Qt.LeftButton:
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(None, "Elimina Componente", 
+                                        f"Vuoi rimuovere il punto {self.number} dall'esploso?", 
+                                        QMessageBox.Yes | QMessageBox.No)
+            if reply == QMessageBox.Yes:
+                self.scene().removeItem(self)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
 class ProductMapView(QGraphicsView):
-    componentSelected = Signal(int)
+    componentSelected = Signal(str)
+    pointAddedManually = Signal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -144,6 +163,22 @@ class ProductMapView(QGraphicsView):
             return
 
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self._calibration_mode and event.button() == Qt.LeftButton:
+            item = self.itemAt(event.pos())
+            # Aggiunge nuovo punto solo se clicchiamo sul vuoto o sull'immagine di background
+            if item is None or isinstance(item, QGraphicsPixmapItem):
+                from PySide6.QtWidgets import QInputDialog
+                scene_pos = self.mapToScene(event.pos())
+                code, ok = QInputDialog.getText(self, "Nuovo Componente", "Inserisci il Codice/Posizione:")
+                if ok and code.strip():
+                    val = code.strip()
+                    self.add_point(scene_pos.x(), scene_pos.y(), val, "Componente aggiunto manualmente")
+                    self.pointAddedManually.emit(val)
+                event.accept()
+                return
+        super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event):
         if self._is_panning:
