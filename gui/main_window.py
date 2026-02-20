@@ -437,6 +437,21 @@ class MainWindow(QMainWindow):
             )
             self.load_interventi()
 
+    def on_new_product_ready(self, base_name):
+        """ Riceve l'evento dal Watcher di sfondo quando un PDF è stato analizzato """
+        # Ricarichiamo i prodotti interni dal registry
+        self.registry.scan_products()
+        
+        # Aggiorniamo la combo mantenendo l'attuale selezione se possibile
+        current = self.combo_products.currentText()
+        self.combo_products.blockSignals(True)
+        self.combo_products.clear()
+        self.combo_products.addItems(self.registry.get_available_products())
+        self.combo_products.blockSignals(False)
+        
+        if current in self.registry.get_available_products():
+            self.combo_products.setCurrentText(current)
+
     def edit_intervention(self):
         row = self.table.currentRow()
         if row < 0: return

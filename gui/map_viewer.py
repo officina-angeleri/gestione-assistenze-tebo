@@ -73,13 +73,19 @@ class MapPoint(QGraphicsEllipseItem):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # If NOT in calibration mode, trigger selection
+            # Se è abilitato ItemIsMovable (siamo in calibrazione), permettiamo il drag.
+            # Altrimenti (operazione), emettiamo il click per la distinta.
             if not (self.flags() & QGraphicsItem.ItemIsMovable):
                 scene = self.scene()
                 if isinstance(scene, ClickableScene):
                     scene.point_clicked.emit(self.number)
-                    return # Don't allow drag
+                    return # Blocca il propagarsi dell'evento così non draga
+        
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # Permette di emettere il ricalcolo coordinate se spostato
+        super().mouseReleaseEvent(event)
 
 class ProductMapView(QGraphicsView):
     componentSelected = Signal(int)

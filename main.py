@@ -2,12 +2,16 @@ import sys
 import os
 from PySide6.QtWidgets import QApplication
 from gui import MainWindow
+from watcher import DrawingsWatcher
 
 def main():
     # Set the working directory to the script's directory to find assets
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     
     app = QApplication(sys.argv)
+    
+    # Inizializza il watcher silente in background
+    watcher = DrawingsWatcher(parent=app)
     
     # Light Theme - High Contrast for legibility
     app.setStyleSheet("""
@@ -47,6 +51,10 @@ def main():
     """)
     
     window = MainWindow()
+    
+    # Colleghiamo il segnale del watcher alla finestra per aggiornare la UI
+    watcher.new_product_ready.connect(window.on_new_product_ready)
+    
     window.show()
     
     sys.exit(app.exec())
