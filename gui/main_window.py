@@ -213,7 +213,7 @@ class NewInterventionDialog(QDialog):
     def populate_calib_list(self):
         self.calib_list.blockSignals(True)
         self.calib_list.setRowCount(len(self.product_data))
-        for i, pos in enumerate(sorted(self.product_data.keys(), key=lambda x: int(x) if x.isdigit() else x)):
+        for i, pos in enumerate(sorted(self.product_data.keys(), key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)))):
             pos_str = str(pos)
             code, desc = self.product_data[pos_str]
             
