@@ -147,10 +147,14 @@ class NewInterventionDialog(QDialog):
         self.map_splitter.addWidget(self.map_view)
         
         self.calib_list = QTableWidget()
-        self.calib_list.setColumnCount(2)
-        self.calib_list.setHorizontalHeaderLabels(["N", "Descrizione"])
-        self.calib_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.calib_list.setColumnCount(3)
+        self.calib_list.setHorizontalHeaderLabels(["ID", "Codice", "Descrizione"])
+        # Evita che l'utente editi l'ID
+        self.calib_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.calib_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.calib_list.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.calib_list.setVisible(False)
+        self.calib_list.itemChanged.connect(self.on_calib_data_changed)
         self.map_splitter.addWidget(self.calib_list)
         
         # Set map as much larger by default
@@ -207,13 +211,44 @@ class NewInterventionDialog(QDialog):
         self.btn_mode_toggle.setText("MODO OPERAZIONE" if checked else "MODO CALIBRAZIONE")
 
     def populate_calib_list(self):
+        self.calib_list.blockSignals(True)
         self.calib_list.setRowCount(len(self.product_data))
-        for i, pos in enumerate(sorted(self.product_data.keys())):
+        for i, pos in enumerate(sorted(self.product_data.keys(), key=lambda x: int(x) if x.isdigit() else x)):
             pos_str = str(pos)
             code, desc = self.product_data[pos_str]
-            display_text = f"[{code}] {desc}"
-            self.calib_list.setItem(i, 0, QTableWidgetItem(pos_str))
-            self.calib_list.setItem(i, 1, QTableWidgetItem(display_text))
+            
+            # ID
+            item_id = QTableWidgetItem(pos_str)
+            item_id.setFlags(item_id.flags() & ~Qt.ItemIsEditable) # Readonly
+            self.calib_list.setItem(i, 0, item_id)
+            
+            # Codice e Descrizione (Editabili)
+            self.calib_list.setItem(i, 1, QTableWidgetItem(code))
+            self.calib_list.setItem(i, 2, QTableWidgetItem(desc))
+            
+        self.calib_list.blockSignals(False)
+
+    def on_calib_data_changed(self, item):
+        row = item.row()
+        pos_id = self.calib_list.item(row, 0).text()
+        
+        # Recupera i nuovi dati inseriti
+        new_code = self.calib_list.item(row, 1).text() if self.calib_list.item(row, 1) else ""
+        new_desc = self.calib_list.item(row, 2).text() if self.calib_list.item(row, 2) else ""
+        
+        # Aggiorna il dizionario
+        if pos_id in self.product_data:
+            self.product_data[pos_id] = [new_code, new_desc]
+            # Salva attivamente nei file JSON
+            self.registry.save_product_data(self.product_id, self.product_data)
+            
+            # Se siamo fortunati, aggiornamemto anche sul tooltip visuale
+            coords = self.map_view.get_all_points()
+            for x, y, map_id in coords:
+                if str(map_id) == pos_id:
+                    # In teoria potremmo aggiornare iterando la scena,
+                    # ma per evitare rallentamenti ricarichiamo i map_points solo se servisse.
+                    pass
 
     def setup_map_points(self):
         coords = self.registry.get_product_coords(self.product_id)

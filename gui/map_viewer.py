@@ -169,13 +169,22 @@ class ProductMapView(QGraphicsView):
             item = self.itemAt(event.pos())
             # Aggiunge nuovo punto solo se clicchiamo sul vuoto o sull'immagine di background
             if item is None or isinstance(item, QGraphicsPixmapItem):
-                from PySide6.QtWidgets import QInputDialog
                 scene_pos = self.mapToScene(event.pos())
-                code, ok = QInputDialog.getText(self, "Nuovo Componente", "Inserisci il Codice/Posizione:")
-                if ok and code.strip():
-                    val = code.strip()
-                    self.add_point(scene_pos.x(), scene_pos.y(), val, "Componente aggiunto manualmente")
-                    self.pointAddedManually.emit(val)
+                
+                # Trova il numero progressivo disponibile più alto
+                max_id = 0
+                for pt in self._clickable_scene.items():
+                    if isinstance(pt, MapPoint):
+                        try:
+                            curr_id = int(pt.number)
+                            if curr_id > max_id:
+                                max_id = curr_id
+                        except ValueError:
+                            pass
+                            
+                new_id = str(max_id + 1)
+                self.add_point(scene_pos.x(), scene_pos.y(), new_id, "Componente aggiunto manualmente")
+                self.pointAddedManually.emit(new_id)
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)
