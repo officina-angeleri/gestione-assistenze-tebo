@@ -2,8 +2,11 @@ import os
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QSplitter, QDialog, QFormLayout, 
-                             QLineEdit, QDoubleSpinBox, QTextEdit, QComboBox, QMessageBox, QGroupBox)
+                             QLineEdit, QDoubleSpinBox, QTextEdit, QComboBox, QMessageBox, QGroupBox,
+                             QTabWidget, QScrollArea, QFrame, QFileDialog)
+from PySide6.QtGui import QPixmap
 from PySide6.QtCore import Qt, QDate, QTimer
+import shutil
 from .map_viewer import ProductMapView
 from database import DatabaseManager
 from registry import ProductRegistry
@@ -23,20 +26,11 @@ class NewInterventionDialog(QDialog):
         self.product_data = self.registry.get_product_data(product_id)
         
         self.setWindowTitle("TEBO - Rapporto Tecnico" if existing_id else f"TEBO - Nuovo Rapporto {product_id}")
-        self.resize(1600, 950)
+        self.resize(800, 950)
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(5, 5, 5, 5)
-        main_layout.setSpacing(0)
-        
-        # MAIN SPLITTER
-        self.main_splitter = QSplitter(Qt.Horizontal)
-        self.main_splitter.setStyleSheet("QSplitter::handle { background-color: #eee; width: 6px; }")
-        
-        # LEFT PANEL: Title + Form + Table
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(10)
         
         title_text = "MODIFICA RAPPORTO" if existing_id else f"NUOVO RAPPORTO: {product_id}"
         title = QLabel(title_text)
@@ -74,105 +68,31 @@ class NewInterventionDialog(QDialog):
         self.txt_notes.setPlaceholderText("Dettagli tecnici...")
         self.txt_notes.setMaximumHeight(80)
         form_layout.addRow("Note:", self.txt_notes)
-        left_layout.addWidget(info_group)
+        main_layout.addWidget(info_group)
         
         table_group = QGroupBox("Pezzi Sostituiti")
         table_layout = QVBoxLayout(table_group)
+        
+        self.btn_open_calibrator = QPushButton("APRI ESPLOSO TECNICO E SELEZIONA PEZZI")
+        self.btn_open_calibrator.setMinimumHeight(40)
+        self.btn_open_calibrator.setStyleSheet("background-color: #ff9800; color: white; font-weight: bold; font-size: 14px; border-radius: 4px; margin-bottom: 10px;")
+        self.btn_open_calibrator.clicked.connect(self.open_calibrator)
+        table_layout.addWidget(self.btn_open_calibrator)
+
         self.comp_table = QTableWidget()
         self.comp_table.setColumnCount(5)
         self.comp_table.setHorizontalHeaderLabels(["POS", "CODICE", "DESCRIZIONE", "QTY", "AZIONE"])
         self.comp_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.comp_table.setAlternatingRowColors(True)
         table_layout.addWidget(self.comp_table)
-        left_layout.addWidget(table_group)
+        main_layout.addWidget(table_group)
         
         self.btn_save = QPushButton("SALVA E CHIUDI")
         self.btn_save.clicked.connect(self.accept)
         self.btn_save.setMinimumHeight(60)
         self.btn_save.setStyleSheet("background-color: #007c91; color: white; font-weight: bold; font-size: 18px; border-radius: 4px;")
-        left_layout.addWidget(self.btn_save)
+        main_layout.addWidget(self.btn_save)
         
-        self.main_splitter.addWidget(left_panel)
-        
-        # RIGHT PANEL: Toolbar + Map Area (with Nested Splitter for Calib List)
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(0)
-        
-        # Modern Compact Toolbar
-        toolbar = QWidget()
-        toolbar.setStyleSheet("background-color: #f8f9fa; border-bottom: 1px solid #ddd;")
-        toolbar_layout = QHBoxLayout(toolbar)
-        toolbar_layout.setContentsMargins(10, 5, 10, 5)
-        
-        toolbar_layout.addWidget(QLabel("<b>ESPLOSO TECNICO</b>"))
-        toolbar_layout.addStretch()
-        
-        self.btn_mode_toggle = QPushButton("ABILITA CALIBRAZIONE")
-        self.btn_mode_toggle.setCheckable(True)
-        self.btn_mode_toggle.setFixedWidth(180)
-        self.btn_mode_toggle.setStyleSheet("""
-            QPushButton { background-color: #eee; border: 1px solid #ccc; padding: 5px; font-weight: bold; }
-            QPushButton:checked { background-color: #ff9800; color: white; border-color: #e68a00; }
-        """)
-        self.btn_mode_toggle.toggled.connect(self.toggle_calibration_mode)
-        toolbar_layout.addWidget(self.btn_mode_toggle)
-        
-        self.btn_save_coords = QPushButton("SALVA CALIB.")
-        self.btn_save_coords.setFixedWidth(120)
-        self.btn_save_coords.setStyleSheet("background-color: #4caf50; color: white; font-weight: bold; padding: 5px;")
-        self.btn_save_coords.clicked.connect(self.save_calibration)
-        self.btn_save_coords.setVisible(False)
-        toolbar_layout.addWidget(self.btn_save_coords)
-        
-        btn_reset = QPushButton("Adatta Vista")
-        btn_reset.setFixedWidth(100)
-        btn_reset.clicked.connect(lambda: self.map_view.reset_view())
-        toolbar_layout.addWidget(btn_reset)
-        
-        right_layout.addWidget(toolbar)
-        
-        # NESTED SPLITTER for Map and Calibration List
-        self.map_splitter = QSplitter(Qt.Horizontal)
-        self.map_splitter.setStyleSheet("QSplitter::handle { background-color: #ddd; width: 4px; }")
-        
-        self.map_view = ProductMapView()
-        png_path = self.product_info['drawing_path'].replace('.pdf', '.png')
-        if os.path.exists(png_path): self.map_view.load_image(png_path)
-        else: self.map_view.load_image(self.product_info['drawing_path'])
-        
-        self.map_view.componentSelected.connect(self.add_component_row)
-        self.map_view.pointAddedManually.connect(self.on_point_added_manually)
-        self.map_view.pointDeletedManually.connect(self.on_point_deleted_manually)
-        self.map_splitter.addWidget(self.map_view)
-        
-        self.calib_list = QTableWidget()
-        self.calib_list.setColumnCount(3)
-        self.calib_list.setHorizontalHeaderLabels(["ID", "Codice", "Descrizione"])
-        # Evita che l'utente editi l'ID
-        self.calib_list.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.calib_list.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.calib_list.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.calib_list.setVisible(False)
-        self.calib_list.itemChanged.connect(self.on_calib_data_changed)
-        self.map_splitter.addWidget(self.calib_list)
-        
-        # Set map as much larger by default
-        self.map_splitter.setStretchFactor(0, 4)
-        self.map_splitter.setStretchFactor(1, 1)
-        
-        # IMPORTANT: Add splitter with stretch factor high (1) to fill the parent layout
-        right_layout.addWidget(self.map_splitter, 1)
-        self.main_splitter.addWidget(right_panel)
-        
-        # Proportions: 30% left, 70% right
-        self.main_splitter.setStretchFactor(0, 2)
-        self.main_splitter.setStretchFactor(1, 5)
-        
-        main_layout.addWidget(self.main_splitter)
-        
-        # UI Tweak for visibility
         self.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
@@ -188,9 +108,7 @@ class NewInterventionDialog(QDialog):
                 background-color: transparent;
             }
         """)
-        
-        self.setup_map_points()
-        self.populate_calib_list()
+
         
         if existing_id:
             self.load_existing_data(existing_id)
@@ -204,111 +122,38 @@ class NewInterventionDialog(QDialog):
             self.txt_notes.setPlainText(report.note_tecniche or "")
             for c in report.componenti:
                 self.add_component_row(c.numero_componente, c.quantita)
-
-    def toggle_calibration_mode(self, checked):
-        self.map_view.set_calibration_mode(checked)
-        self.btn_save_coords.setVisible(checked)
-        self.calib_list.setVisible(checked)
-        self.btn_mode_toggle.setText("MODO OPERAZIONE" if checked else "MODO CALIBRAZIONE")
-
-    def populate_calib_list(self):
-        self.calib_list.blockSignals(True)
-        self.calib_list.setRowCount(len(self.product_data))
-        for i, pos in enumerate(sorted(self.product_data.keys(), key=lambda x: (0, int(x)) if str(x).isdigit() else (1, str(x)))):
-            pos_str = str(pos)
-            code, desc = self.product_data[pos_str]
-            
-            # ID
-            item_id = QTableWidgetItem(pos_str)
-            item_id.setFlags(item_id.flags() & ~Qt.ItemIsEditable) # Readonly
-            self.calib_list.setItem(i, 0, item_id)
-            
-            # Codice e Descrizione (Editabili)
-            self.calib_list.setItem(i, 1, QTableWidgetItem(code))
-            self.calib_list.setItem(i, 2, QTableWidgetItem(desc))
-            
-        self.calib_list.blockSignals(False)
-
-    def on_calib_data_changed(self, item):
-        row = item.row()
-        pos_id = self.calib_list.item(row, 0).text()
+    def open_calibrator(self):
+        calib_dialog = QDialog(self)
+        calib_dialog.setWindowTitle(f"Esploso Tecnico - {self.product_id}")
+        calib_dialog.resize(1300, 800)
         
-        # Recupera i nuovi dati inseriti
-        new_code = self.calib_list.item(row, 1).text() if self.calib_list.item(row, 1) else ""
-        new_desc = self.calib_list.item(row, 2).text() if self.calib_list.item(row, 2) else ""
+        # Fix: Assicuriamoci di poter ridimensionare/massimizzare il modale
+        calib_dialog.setWindowFlags(calib_dialog.windowFlags() | Qt.WindowMaximizeButtonHint)
         
-        # Aggiorna il dizionario
-        if pos_id in self.product_data:
-            self.product_data[pos_id] = [new_code, new_desc]
-            # Salva attivamente nei file JSON
-            self.registry.save_product_data(self.product_id, self.product_data)
-            
-            # Se siamo fortunati, aggiornamemto anche sul tooltip visuale
-            coords = self.map_view.get_all_points()
-            for x, y, map_id in coords:
-                if str(map_id) == pos_id:
-                    # In teoria potremmo aggiornare iterando la scena,
-                    # ma per evitare rallentamenti ricarichiamo i map_points solo se servisse.
-                    pass
-
-    def setup_map_points(self):
-        coords = self.registry.get_product_coords(self.product_id)
-        for x, y, num in coords:
-            pos_str = str(num)
-            code, desc = self.product_data.get(pos_str, ("-", "???"))
-            full_desc = f"[{code}] {desc}"
-            self.map_view.add_point(x, y, pos_str, full_desc)
-
-    def save_calibration(self):
-        coords = self.map_view.get_all_points()
-        if self.registry.save_product_coords(self.product_id, coords):
-            QMessageBox.information(self, "OK", "Posizioni salvate.")
-            self.btn_mode_toggle.setChecked(False)
-            
-    def on_point_added_manually(self, code):
-        """ Aggiunge dinamicamente il pezzo alla product_data e ricarica la lista di destra """
-        self.product_data[code] = ["", ""]
-        self.registry.save_product_data(self.product_id, self.product_data)
-        coords = self.map_view.get_all_points()
-        self.registry.save_product_coords(self.product_id, coords)
-        self.populate_calib_list()
+        layout = QVBoxLayout(calib_dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        # Scorre la lista per selezionare e focalizzare la nuova riga
-        for r in range(self.calib_list.rowCount()):
-            if self.calib_list.item(r, 0).text() == code:
-                self.calib_list.selectRow(r)
-                self.calib_list.scrollToItem(self.calib_list.item(r, 0))
-                # Entra in modalità editing sulla cella del codice
-                self.calib_list.editItem(self.calib_list.item(r, 1))
-                break
-
-    def on_point_deleted_manually(self, pos_id):
-        """ Rimuove dinamicamente il pezzo eliminato dalla mappa e dal data json """
-        if pos_id in self.product_data:
-            del self.product_data[pos_id]
-            self.registry.save_product_data(self.product_id, self.product_data)
-            
-        # Salviamo la lista coordinate aggiornata senza il punto
-        coords = self.map_view.get_all_points()
-        self.registry.save_product_coords(self.product_id, coords)
+        from gui.calibrator_widget import DrawingCalibratorWidget
+        # Lo usiamo in modalità INTERVENTO
+        widget = DrawingCalibratorWidget(self.product_id, mode="INTERVENTION", parent=calib_dialog)
+        widget.component_selected.connect(self.on_component_selected_from_map)
+        layout.addWidget(widget)
         
-        # Aggiorna UI
-        self.populate_calib_list()
-
-    def add_component_row(self, pos_num, qty=1.0):
-        pos_str = str(pos_num)
+        calib_dialog.exec()
+        
+    def on_component_selected_from_map(self, pos_str, code, desc):
+        pos_num = pos_str # string compatibility
         # Update existing if found
         for row in range(self.comp_table.rowCount()):
             if self.comp_table.item(row, 0).text() == pos_str:
                 qty_label = self.comp_table.cellWidget(row, 3).findChild(QLabel)
                 if qty_label:
                     current_qty = float(qty_label.text())
-                    qty_label.setText(str(current_qty + qty))
+                    qty_label.setText(str(current_qty + 1.0))
                 return
 
         row = self.comp_table.rowCount()
         self.comp_table.insertRow(row)
-        code, desc = self.product_data.get(pos_str, ("-", "Componente Muto"))
         
         self.comp_table.setItem(row, 0, QTableWidgetItem(pos_str))
         self.comp_table.setItem(row, 1, QTableWidgetItem(code))
@@ -392,6 +237,29 @@ class MainWindow(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabBar::tab { height: 40px; width: 220px; font-weight: bold; font-size: 14px; background: #e0e0e0; margin: 2px; border-radius: 4px; }
+            QTabBar::tab:selected { background: #007c91; color: white; }
+            QTabWidget::pane { border: 0px; }
+        """)
+        main_layout.addWidget(self.tabs)
+        
+        # TAB 1: Interventi
+        tab_interventi = QWidget()
+        self.setup_interventi_tab(tab_interventi)
+        self.tabs.addTab(tab_interventi, "Rapporti di Intervento")
+        
+        # TAB 2: Archivio
+        tab_archivio = QWidget()
+        self.setup_archivio_tab(tab_archivio)
+        self.tabs.addTab(tab_archivio, "Archivio Master Disegni")
+
+    def setup_interventi_tab(self, parent_widget):
+        main_layout = QVBoxLayout(parent_widget)
         
         header_layout = QHBoxLayout()
         label_title = QLabel("Cronologia Interventi Tecnici")
@@ -584,3 +452,131 @@ class MainWindow(QMainWindow):
                 self.table.setItem(i, 3, QTableWidgetItem(", ".join(details) if details else "-"))
         except Exception as e:
             print(f"Error loading history: {e}")
+
+    # --------- NUOVA SEZIONE: ARCHIVIO MASTER ---------
+    
+    def setup_archivio_tab(self, parent_widget):
+        layout = QVBoxLayout(parent_widget)
+        
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(15, 10, 15, 10)
+        
+        title_label = QLabel("ARCHIVIO ESPLOSI E CALIBRAZIONI MASTER")
+        title_label.setStyleSheet("font-size: 18px; font-weight: bold; color: #007c91;")
+        header_layout.addWidget(title_label)
+        
+        header_layout.addStretch()
+        
+        btn_upload = QPushButton("CARICA NUOVO DISEGNO MASTER")
+        btn_upload.setMinimumHeight(40)
+        btn_upload.clicked.connect(self.upload_new_drawing)
+        btn_upload.setStyleSheet("background-color: #ff9800; color: white; font-weight: bold; padding: 0 15px; border-radius: 4px;")
+        header_layout.addWidget(btn_upload)
+        
+        layout.addLayout(header_layout)
+        
+        # Griglia
+        self.grid_scroll = QScrollArea()
+        self.grid_scroll.setWidgetResizable(True)
+        self.grid_scroll.setStyleSheet("QScrollArea { border: none; background-color: #f5f5f5; }")
+        
+        self.grid_container = QWidget()
+        self.grid_container.setStyleSheet("background-color: #f5f5f5;")
+        from PySide6.QtWidgets import QGridLayout
+        self.grid_layout = QGridLayout(self.grid_container)
+        self.grid_layout.setSpacing(15)
+        self.grid_layout.setContentsMargins(15, 15, 15, 15)
+        self.grid_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        
+        self.grid_scroll.setWidget(self.grid_container)
+        layout.addWidget(self.grid_scroll)
+        
+        self.refresh_archive_grid()
+        
+    def refresh_archive_grid(self):
+        # Svuota griglia
+        while self.grid_layout.count():
+            child = self.grid_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+                
+        products = self.registry.get_available_products()
+        
+        cols = 4 # Numero di colonne desiderate
+        for i, prod_id in enumerate(products):
+            info = self.registry.get_product_info(prod_id)
+            card = self.create_drawing_card(prod_id, info)
+            self.grid_layout.addWidget(card, i // cols, i % cols)
+            
+    def create_drawing_card(self, prod_id, info):
+        card = QFrame()
+        card.setFixedSize(220, 260)
+        card.setStyleSheet("""
+            QFrame { background-color: white; border: 1px solid #ddd; border-radius: 8px; }
+            QFrame:hover { border: 2px solid #007c91; }
+        """)
+        c_layout = QVBoxLayout(card)
+        c_layout.setContentsMargins(10, 10, 10, 10)
+        
+        lbl_preview = QLabel()
+        lbl_preview.setFixedSize(198, 140)
+        lbl_preview.setStyleSheet("border: 1px solid #eee; background-color: #fafafa;")
+        lbl_preview.setAlignment(Qt.AlignCenter)
+        
+        png_path = info['drawing_path'].replace('.pdf', '.png')
+        if os.path.exists(png_path):
+            pix = QPixmap(png_path)
+            lbl_preview.setPixmap(pix.scaled(lbl_preview.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            lbl_preview.setText("PDF")
+        c_layout.addWidget(lbl_preview)
+        
+        lbl_title = QLabel(prod_id)
+        lbl_title.setStyleSheet("font-weight: bold; font-size: 14px; border: none;")
+        lbl_title.setAlignment(Qt.AlignCenter)
+        c_layout.addWidget(lbl_title)
+        
+        calib_count = len(self.registry.get_product_coords(prod_id))
+        lbl_status = QLabel(f"{calib_count} punti calibrati")
+        lbl_status.setStyleSheet("color: #666; font-size: 11px; border: none;")
+        lbl_status.setAlignment(Qt.AlignCenter)
+        c_layout.addWidget(lbl_status)
+        
+        btn_edit = QPushButton("MODIFICA MASTER")
+        btn_edit.setStyleSheet("background-color: #007c91; color: white; font-weight: bold; border-radius: 4px; padding: 5px;")
+        btn_edit.clicked.connect(lambda _, pid=prod_id: self.open_master_calibrator(pid))
+        c_layout.addWidget(btn_edit)
+        
+        return card
+
+    def upload_new_drawing(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Seleziona Disegno Tecnico", "", "PDF/Immagini (*.pdf *.png *.jpg *.jpeg)")
+        if not file_path: return
+        
+        base_name = os.path.basename(file_path)
+        dest_path = os.path.join(self.registry.drawings_dir, base_name)
+        
+        try:
+            shutil.copy2(file_path, dest_path)
+            # Il watcher farà l'OCR. Noi aggiorniamo al volo la UI
+            QMessageBox.information(self, "Upload Esterno", f"File '{base_name}' caricato con successo. Attendi l'elaborazione se è un PDF.")
+        except Exception as e:
+            QMessageBox.critical(self, "Errore", f"Impossibile copiare: {e}")
+
+    def open_master_calibrator(self, product_id):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Calibrazione Master - {product_id}")
+        dialog.resize(1300, 800)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowMaximizeButtonHint)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        
+        from gui.calibrator_widget import DrawingCalibratorWidget
+        widget = DrawingCalibratorWidget(product_id, mode="MASTER", parent=dialog)
+        layout.addWidget(widget)
+        
+        dialog.exec()
+        
+        # Al ritorno aggiorniamo lo status sulla griglia e nei combobox
+        self.refresh_archive_grid()
