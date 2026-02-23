@@ -143,6 +143,7 @@ class NewInterventionDialog(QDialog):
         else: self.map_view.load_image(self.product_info['drawing_path'])
         
         self.map_view.componentSelected.connect(self.add_component_row)
+        self.map_view.pointAddedManually.connect(self.on_point_added_manually)
         self.map_splitter.addWidget(self.map_view)
         
         self.calib_list = QTableWidget()
@@ -208,28 +209,37 @@ class NewInterventionDialog(QDialog):
     def populate_calib_list(self):
         self.calib_list.setRowCount(len(self.product_data))
         for i, pos in enumerate(sorted(self.product_data.keys())):
-            code, desc = self.product_data[pos]
+            pos_str = str(pos)
+            code, desc = self.product_data[pos_str]
             display_text = f"[{code}] {desc}"
-            self.calib_list.setItem(i, 0, QTableWidgetItem(str(pos)))
+            self.calib_list.setItem(i, 0, QTableWidgetItem(pos_str))
             self.calib_list.setItem(i, 1, QTableWidgetItem(display_text))
 
     def setup_map_points(self):
         coords = self.registry.get_product_coords(self.product_id)
         for x, y, num in coords:
-            code, desc = self.product_data.get(num, ("-", "???"))
+            pos_str = str(num)
+            code, desc = self.product_data.get(pos_str, ("-", "???"))
             full_desc = f"[{code}] {desc}"
-            self.map_view.add_point(x, y, num, full_desc)
+            self.map_view.add_point(x, y, pos_str, full_desc)
 
     def save_calibration(self):
         coords = self.map_view.get_all_points()
         if self.registry.save_product_coords(self.product_id, coords):
             QMessageBox.information(self, "OK", "Posizioni salvate.")
             self.btn_mode_toggle.setChecked(False)
+            
+    def on_point_added_manually(self, code):
+        """ Aggiunge dinamicamente il pezzo alla product_data e ricarica la lista di destra """
+        if code not in self.product_data:
+            self.product_data[code] = ["-", f"Componente {code}"]
+            self.populate_calib_list()
 
     def add_component_row(self, pos_num, qty=1.0):
+        pos_str = str(pos_num)
         # Update existing if found
         for row in range(self.comp_table.rowCount()):
-            if self.comp_table.item(row, 0).text() == str(pos_num):
+            if self.comp_table.item(row, 0).text() == pos_str:
                 qty_label = self.comp_table.cellWidget(row, 3).findChild(QLabel)
                 if qty_label:
                     current_qty = float(qty_label.text())
@@ -238,9 +248,9 @@ class NewInterventionDialog(QDialog):
 
         row = self.comp_table.rowCount()
         self.comp_table.insertRow(row)
-        code, desc = self.product_data.get(pos_num, ("-", "Componente"))
+        code, desc = self.product_data.get(pos_str, ("-", "Componente Muto"))
         
-        self.comp_table.setItem(row, 0, QTableWidgetItem(str(pos_num)))
+        self.comp_table.setItem(row, 0, QTableWidgetItem(pos_str))
         self.comp_table.setItem(row, 1, QTableWidgetItem(code))
         self.comp_table.setItem(row, 2, QTableWidgetItem(desc))
         
@@ -289,12 +299,12 @@ class NewInterventionDialog(QDialog):
     def get_data(self):
         components = []
         for row in range(self.comp_table.rowCount()):
-            num = int(self.comp_table.item(row, 0).text())
+            pos_str = self.comp_table.item(row, 0).text()
             code = self.comp_table.item(row, 1).text()
             desc = self.comp_table.item(row, 2).text()
             qty_label = self.comp_table.cellWidget(row, 3).layout().itemAt(1).widget()
             qty = float(qty_label.text())
-            components.append({'numero': num, 'codice': code, 'descrizione': desc, 'quantita': qty})
+            components.append({'numero': pos_str, 'codice': code, 'descrizione': desc, 'quantita': qty})
             
         return {
             'prodotto': self.product_id,
