@@ -6,6 +6,7 @@ from PySide6.QtGui import QPixmap, QColor, QPen, QBrush, QPainter, QFont
 
 class ClickableScene(QGraphicsScene):
     point_clicked = Signal(str)
+    point_deleted = Signal(str)
 
 class MapPoint(QGraphicsEllipseItem):
     def __init__(self, x, y, number, description="", parent=None):
@@ -100,6 +101,9 @@ class MapPoint(QGraphicsEllipseItem):
                                         f"Vuoi rimuovere il punto {self.number} dall'esploso?", 
                                         QMessageBox.Yes | QMessageBox.No)
             if reply == QMessageBox.Yes:
+                scene = self.scene()
+                if isinstance(scene, ClickableScene):
+                    scene.point_deleted.emit(self.number)
                 self.scene().removeItem(self)
             event.accept()
             return
@@ -108,11 +112,13 @@ class MapPoint(QGraphicsEllipseItem):
 class ProductMapView(QGraphicsView):
     componentSelected = Signal(str)
     pointAddedManually = Signal(str)
+    pointDeletedManually = Signal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self._clickable_scene = ClickableScene(self)
         self._clickable_scene.point_clicked.connect(self.on_point_clicked)
+        self._clickable_scene.point_deleted.connect(self.pointDeletedManually.emit)
         self.setScene(self._clickable_scene)
         
         # Rendering Quality
@@ -171,20 +177,22 @@ class ProductMapView(QGraphicsView):
             if item is None or isinstance(item, QGraphicsPixmapItem):
                 scene_pos = self.mapToScene(event.pos())
                 
-                # Trova il numero progressivo disponibile più alto
-                max_id = 0
+                # Trova il primo numero progressivo disponibile (riempie i "buchi")
+                used_ids = set()
                 for pt in self._clickable_scene.items():
                     if isinstance(pt, MapPoint):
                         try:
-                            curr_id = int(pt.number)
-                            if curr_id > max_id:
-                                max_id = curr_id
+                            used_ids.add(int(pt.number))
                         except ValueError:
                             pass
                             
-                new_id = str(max_id + 1)
-                self.add_point(scene_pos.x(), scene_pos.y(), new_id, "Componente aggiunto manualmente")
-                self.pointAddedManually.emit(new_id)
+                new_id = 1
+                while new_id in used_ids:
+                    new_id += 1
+                    
+                new_id_str = str(new_id)
+                self.add_point(scene_pos.x(), scene_pos.y(), new_id_str, "Componente aggiunto manualmente")
+                self.pointAddedManually.emit(new_id_str)
                 event.accept()
                 return
         super().mouseDoubleClickEvent(event)

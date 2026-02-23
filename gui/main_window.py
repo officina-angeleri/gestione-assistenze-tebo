@@ -144,6 +144,7 @@ class NewInterventionDialog(QDialog):
         
         self.map_view.componentSelected.connect(self.add_component_row)
         self.map_view.pointAddedManually.connect(self.on_point_added_manually)
+        self.map_view.pointDeletedManually.connect(self.on_point_deleted_manually)
         self.map_splitter.addWidget(self.map_view)
         
         self.calib_list = QTableWidget()
@@ -266,9 +267,33 @@ class NewInterventionDialog(QDialog):
             
     def on_point_added_manually(self, code):
         """ Aggiunge dinamicamente il pezzo alla product_data e ricarica la lista di destra """
-        if code not in self.product_data:
-            self.product_data[code] = ["-", f"Componente {code}"]
-            self.populate_calib_list()
+        self.product_data[code] = ["", ""]
+        self.registry.save_product_data(self.product_id, self.product_data)
+        coords = self.map_view.get_all_points()
+        self.registry.save_product_coords(self.product_id, coords)
+        self.populate_calib_list()
+        
+        # Scorre la lista per selezionare e focalizzare la nuova riga
+        for r in range(self.calib_list.rowCount()):
+            if self.calib_list.item(r, 0).text() == code:
+                self.calib_list.selectRow(r)
+                self.calib_list.scrollToItem(self.calib_list.item(r, 0))
+                # Entra in modalità editing sulla cella del codice
+                self.calib_list.editItem(self.calib_list.item(r, 1))
+                break
+
+    def on_point_deleted_manually(self, pos_id):
+        """ Rimuove dinamicamente il pezzo eliminato dalla mappa e dal data json """
+        if pos_id in self.product_data:
+            del self.product_data[pos_id]
+            self.registry.save_product_data(self.product_id, self.product_data)
+            
+        # Salviamo la lista coordinate aggiornata senza il punto
+        coords = self.map_view.get_all_points()
+        self.registry.save_product_coords(self.product_id, coords)
+        
+        # Aggiorna UI
+        self.populate_calib_list()
 
     def add_component_row(self, pos_num, qty=1.0):
         pos_str = str(pos_num)
